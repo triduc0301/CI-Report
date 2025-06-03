@@ -50,13 +50,6 @@ jobs:
               fh.write(f"SKIPPED={suite.attrib.get('skipped','0')}\n")
           EOF
 
-      - name: Upload HTML Report
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: html-report
-          path: results/html-report
-
       - name: Send Slack Notification
         if: always()
         uses: slackapi/slack-github-action@v1.24.0
@@ -67,7 +60,7 @@ jobs:
               "attachments": [
                 {
                   "color": "${{ steps.run_tests.outcome == 'success' && '#36a64f' || '#e01e5a' }}",
-                  "title": "🔗 Xem báo cáo chi tiết tại GitHub Actions (tab Artifacts)",
+                  "title": "🔗 Xem chi tiết tại GitHub Actions",
                   "title_link": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
                   "fields": [
                     { "title": "Repository",   "value": "${{ github.repository }}", "short": true },
