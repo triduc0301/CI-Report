@@ -1,0 +1,85 @@
+name: Playwright CI with Slack & Report
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  run-tests-and-notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright Tests
+        id: run_tests
+        run: |
+          mkdir -p results
+          npx playwright test --reporter=list,junit,html
+        continue-on-error: true
+
+      - name: Get short SHA
+        id: short_sha
+        run: |
+          echo "COMMIT_SHORT=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Extract test summary
+        id: summary
+        run: |
+          python <<EOF
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('results/junit.xml')
+          suite = tree.getroot().find('testsuite')
+          with open('${GITHUB_OUTPUT}', 'a') as fh:
+              fh.write(f"PASSED={suite.attrib.get('tests','0')}\n")
+              fh.write(f"FAILED={suite.attrib.get('failures','0')}\n")
+              fh.write(f"SKIPPED={suite.attrib.get('skipped','0')}\n")
+          EOF
+
+      - name: Upload HTML Report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: html-report
+          path: results/html-report
+
+      - name: Send Slack Notification
+        if: always()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": ":rocket: Playwright CI – ${{ steps.run_tests.outcome }}",
+              "attachments": [
+                {
+                  "color": "${{ steps.run_tests.outcome == 'success' && '#36a64f' || '#e01e5a' }}",
+                  "title": "🔗 Xem báo cáo chi tiết tại GitHub Actions (tab Artifacts)",
+                  "title_link": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                  "fields": [
+                    { "title": "Repository",   "value": "${{ github.repository }}", "short": true },
+                    { "title": "Branch",       "value": "${{ github.ref_name }}", "short": true },
+                    { "title": "Commit",       "value": "${{ steps.short_sha.outputs.COMMIT_SHORT }}", "short": true },
+                    { "title": "Test Status",  "value": "${{ steps.run_tests.outcome }}", "short": true },
+                    { "title": "Tests Total",  "value": "${{ steps.summary.outputs.PASSED }}", "short": true },
+                    { "title": "Failed",       "value": "${{ steps.summary.outputs.FAILED }}", "short": true },
+                    { "title": "Skipped",      "value": "${{ steps.summary.outputs.SKIPPED }}", "short": true }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
